@@ -7,7 +7,7 @@
 <script>
 /* Puente: la página usa claude.use(...); aquí lo atiende Firebase (módulo al final) */
 window.__fbReady=new Promise(r=>{window.__fbResolve=r});
-window.claude={use:n=>window.__fbError?Promise.resolve(null):Promise.race([window.__fbReady.then(x=>x?x[n]:null),new Promise(r=>setTimeout(()=>{window.__fbError=window.__fbError||'Firebase no cargó (sin internet o bloqueado)';r(null)},8000))])};
+window.claude={use:n=>window.__fbReady.then(x=>x?x[n]:null)};
 </script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;700;800&display=swap">
 <style>
@@ -124,6 +124,9 @@ body.out{overflow:hidden}
 #fshint{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;padding:6px 16px;border-radius:999px;font-size:.85rem;opacity:0;pointer-events:none;z-index:5}
 .out #fshint{animation:fh 8s 1s both}
 @keyframes fh{0%,88%{opacity:1}100%{opacity:0}}
+#sndhint{display:none;position:absolute;bottom:calc(64px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:rgba(0,0,0,.65);color:#fff;padding:8px 18px;border-radius:999px;font-size:.95rem;z-index:5;pointer-events:none}
+.out #sndhint{display:block}
+.snd #sndhint{display:none!important}
 .agl,.ag ol{list-style:none;margin:0;padding:0}
 .agl li,.ag li{display:flex;gap:14px;align-items:baseline;padding:8px 12px;border-radius:12px;margin-bottom:4px}
 .agl li b,.ag li b{min-width:64px;color:var(--a)}
@@ -223,7 +226,7 @@ body.out{overflow:hidden}
 <div class="qr" id="qr"><button id="qrx" title="Ocultar">✕</button><div id="qrbox"></div><b>📲 Escanea y descarga la app</b></div>
 <button id="qrshow">📲 QR</button>
 <div id="tv">
-  <button id="tvx">✕</button><button id="tvp">👥 Presentar equipo (P)</button><div id="fshint">Pulsa F para pantalla completa</div>
+  <button id="tvx">✕</button><button id="tvp">👥 Presentar equipo (P)</button><div id="fshint">Pulsa F para pantalla completa</div><div id="sndhint">🔊 Toca la pantalla o pulsa una tecla para activar el sonido</div>
   <div class="tvh"><img id="tvlogo" alt="Express"><div><b>EXPRESS</b><span>Conectamos personas, movemos tu ciudad</span></div>
     <div class="tvc"><div><b id="td">0</b><small>Días</small></div><div><b id="th">0</b><small>Horas</small></div><div><b id="tm">0</b><small>Min</small></div><div><b id="ts">0</b><small>Seg</small></div></div></div>
   <div class="tvs" id="slides"></div>
@@ -295,7 +298,8 @@ async function shrink(f,mx=400){
   const b=await createImageBitmap(f),k=Math.min(1,mx/Math.max(b.width,b.height));
   const c=document.createElement('canvas');c.width=Math.round(b.width*k);c.height=Math.round(b.height*k);
   c.getContext('2d').drawImage(b,0,0,c.width,c.height);
-  return new Promise(r=>c.toBlob(r,'image/jpeg',.85));
+  let q=.85,o;do{o=await new Promise(r=>c.toBlob(r,'image/jpeg',q));q-=.15}while(o.size>550000&&q>.3);
+  return o;
 }
 function pick(p){
   if(!assets){$('msg').textContent='Subida de fotos no disponible';return}
@@ -359,7 +363,7 @@ function applyLive(d){
 }
 function live(on){if(admin&&db)db.doc('config/live').set({on,idx,s:pset,t:Date.now()}).catch(()=>{})}
 function ping(){if(db&&admin)db.doc('config/tvping').set({t:Date.now()}).catch(()=>{})}
-function tvOn(on){$('tv').classList.toggle('on',on);document.body.classList.toggle('out',on);if(on)keepAwake();else $('clean').classList.remove('on');clearInterval(stimer);clearInterval(pingTimer);if(on){tvRender();stimer=setInterval(tvTick,6000);pingTimer=setInterval(ping,5000);ping();if(lastLive)applyLive(lastLive)}}
+function tvOn(on){$('tv').classList.toggle('on',on);document.body.classList.toggle('out',on);if(on)keepAwake();else $('clean').classList.remove('on');clearInterval(stimer);clearInterval(pingTimer);if(on){tvRender();stimer=setInterval(tvTick,6000);pingTimer=setInterval(ping,10000);ping();if(lastLive)applyLive(lastLive)}}
 ['start','startd','next','prev'].forEach(id=>$(id).addEventListener('click',()=>live(true)));
 $('close').addEventListener('click',()=>live(false));
 $('tvp').onclick=()=>$('start').click();
@@ -411,9 +415,9 @@ async function init(){
     let pingFirst=true;
     db.doc('config/tvping').onSnapshot(s=>{if(pingFirst){pingFirst=false;return}pingSeen=Date.now();updTvStat()},()=>{});
     let drawFirst=true;
-    db.doc('config/draw').onSnapshot(s=>{const d=s.exists?s.data():null;if(!d)return;const first=drawFirst;drawFirst=false;draw={pool:Array.isArray(d.pool)?d.pool.map(String):[],won:Array.isArray(d.won)?d.won.map(String):[],prize:String(d.prize||''),winner:String(d.winner||''),t:d.t||0,hist:Array.isArray(d.hist)?d.hist:[]};renderDraw();if(!first&&draw.winner&&($('tv').classList.contains('on')||admin))runDraw(draw)},()=>{});
-    let fxFirst=true;
-    db.doc('config/fx').onSnapshot(s=>{const d=s.exists?s.data():null;if(fxFirst){fxFirst=false;return}if(!d||!$('tv').classList.contains('on'))return;if(d.k==='money')money();else if(d.k==='clean')setClean(true);else if(d.k==='unclean')setClean(false);else $('boom').click()},()=>{});
+    db.doc('config/draw').onSnapshot(s=>{const d=s.exists?s.data():null;if(!d)return;const first=drawFirst;drawFirst=false;draw={pool:Array.isArray(d.pool)?d.pool.map(String):[],won:Array.isArray(d.won)?d.won.map(String):[],prize:String(d.prize||''),winner:String(d.winner||''),t:d.t||0,hist:Array.isArray(d.hist)?d.hist:[]};if(first)lastT=draw.t;renderDraw();if(!first&&draw.winner&&($('tv').classList.contains('on')||admin))runDraw(draw)},()=>{});
+    let fxFirst=true,lastFx=0;
+    db.doc('config/fx').onSnapshot(s=>{const d=s.exists?s.data():null;if(fxFirst){fxFirst=false;lastFx=d?d.t:0;return}if(!d||d.t===lastFx)return;lastFx=d.t;if(!$('tv').classList.contains('on'))return;if(d.k==='money')money();else if(d.k==='clean')setClean(true);else if(d.k==='unclean')setClean(false);else $('boom').click()},()=>{});
     db.doc('config/live').onSnapshot(s=>{lastLive=s.exists?s.data():null;if(lastLive&&$('tv').classList.contains('on'))applyLive(lastLive)},()=>{});
     db.doc('config/tv').onSnapshot(s=>{const d=s.exists?s.data():null;tv={photos:d&&Array.isArray(d.photos)?d.photos:[],msgs:d&&Array.isArray(d.msgs)?d.msgs:[]};if($('tv').classList.contains('on'))tvRender()},()=>{})}catch(e){}
   }
@@ -426,7 +430,7 @@ function show(){
   const h=$('sn');h.style.animation='none';void h.offsetWidth;h.style.animation='';
   burst(window.innerWidth/2,window.innerHeight/3,90);
 }
-function tvOnline(){return Date.now()-pingSeen<15000}
+function tvOnline(){return Date.now()-pingSeen<25000}
 function showLocal(){return $('tv').classList.contains('on')||!tvOnline()||$('localfx').checked}
 function updTvStat(){$('tvstat').textContent=tvOnline()?'🟢 TV conectada':'⚪ TV no detectada'}
 function updateOnAir(){const L=curList(),p=L[idx];$('onair').style.display=presenting&&p?'flex':'none';if(p)$('onairtxt').textContent='En TV: '+p.n+' ('+(idx+1)+'/'+L.length+')'}
@@ -601,6 +605,8 @@ addEventListener('keydown',e=>{if(e.key==='Escape')$('draw').click();if($('tv').
 $('admchk').onclick=async()=>{
   let msg='';
   try{
+    const rd=await Promise.race([window.__fbReady,new Promise(r=>setTimeout(()=>r('timeout'),8000))]);
+    if(rd==='timeout'){$('admmsg').textContent='Firebase no cargó (sin internet o bloqueado). Revisa la conexión y recarga la página.';return}
     if(window.fbLogin)await window.fbLogin();
     const u=await claude.use('user');
     if(!u)msg=window.fbLogin?'No se inició sesión. Pulsa otra vez e ingresa con tu cuenta de Google.':'Firebase no está listo: '+(window.__fbError||'revisa firebaseConfig en index.html')+'.';
@@ -622,6 +628,8 @@ let wl=null;
 async function keepAwake(){try{if('wakeLock' in navigator&&!wl){wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>{wl=null})}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&$('tv').classList.contains('on'))keepAwake()});
 addEventListener('click',keepAwake,{once:true});
+function unlockSnd(){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();ac.resume()}catch(e){}document.body.classList.add('snd')}
+addEventListener('pointerdown',unlockSnd,{once:true});addEventListener('keydown',unlockSnd,{once:true});
 $('cleanlogo').src=document.querySelector('.logo').src;
 let cleanOn=false;
 function setClean(on){if($('tv').classList.contains('on'))$('clean').classList.toggle('on',on)}
